@@ -20,7 +20,7 @@ class TurbineDesign:
     medium - working fluid ex. Water, Toluene, R1233zd(E), etc.
     """
     
-    def __init__(self,T_in, p_in, p_out, mf,medium):
+    def __init__(self, T_in, p_in, p_out, mf,medium):
         self.T_in = T_in
         self.p_in = p_in
         self.p_out = p_out
@@ -68,6 +68,11 @@ class TurbineDesign:
         eta_iT - estimated internal efficiency of turbine 0.0-1.0, - 
         SP - dimensionless size parameter, -
         V_r - dimensionless volumetric flow ration, -
+        
+        Sources:
+        * Macchi E, Astolfi M. Organic rankine cycle (ORC) power systems: Technologies and
+          applications. Duxford, United Kingdom: Woodhead Publishing is an imprint of Elsevier;
+          2017.
         """
 
         self.rho_turbine_in = CP.PropsSI('Dmass', 'T', self.T_in+273.15, 'P', self.p_in*1000, self.medium)
@@ -96,11 +101,9 @@ class TurbineDesign:
                                                      ((math.log(self.V_r)**3)*math.log(self.SP)*(0.00178187)) + \
                                                          ((math.log(self.V_r)**3)*(math.log(self.SP)**2)*(-0.00021196)) + \
                                                             ((math.log(self.V_r)**2)*(math.log(self.SP)**3)*(0.00078667))
-                                                                
-        self.h_out = self.h_in-self.eta_iT*(self.h_in-self.h_out_s)
-        self.T_out = CP.PropsSI('T', 'Hmass', self.h_out*1000, 'P', self.p_out*1000, self.medium)-273.15
-        self.N_iT = self.mf*(self.h_in-self.h_out)
-        
+                                                            
+        self.power(self.eta_iT)
+                                                                 
     def power(self, eta_iT):
         
         """
@@ -133,47 +136,6 @@ class TurbineDesign:
         self.T_out = CP.PropsSI('T', 'Hmass', self.h_out*1000, 'P', self.p_out*1000, self.medium)-273.15
         self.N_iT = self.mf*(self.h_in-self.h_out)
         
-    def plot_Ts():
-        pass
-        
-    def off_design(self, T_in_off, p_in_off, mf_off, p_out_off):
-        pass
-    
-        #m_off  = m_nom*(((p1_off**2-p2**2)/(p1_nom**2-p2_nom**2))*(p1_nom*ve1_nom)/(p1_off*ve1_off))**0.5
-        # def turbine_off(eta_off,eta_nom, T1_off, p1_off, p2,  m_off, medium):
-        
-        # h1_off = CP.PropsSI('Hmass','T',T1_off + 273.15,'P',p1_off  * 1000, medium)/1000                #kJ/kg
-        # s1_off = CP.PropsSI('Smass', 'P',p1_off  * 1000, 'T', T1_off + 273.15, medium)/1000             #kJ/(kg*K)
-        # h2s_off = CP.PropsSI('Hmass', 'P',p2  * 1000, 'Smass', s1_off * 1000, medium)/1000          #kJ/(kg*K)
-        
-        # h1_nom = CP.PropsSI('Hmass','T',211.8 + 273.15,'P',845  * 1000, medium)/1000
-        # h2_nom = CP.PropsSI('Hmass','T',136.7 + 273.15,'P',24  * 1000, medium)/1000
-        # dh_nom = h1_nom - h2_nom
-        
-    
-        # rho2_nom = CP.PropsSI('Dmass','T',136.7 + 273.15,'P',24  * 1000, medium)
-        # V2_nom = 0.388/rho2_nom
-        
-        # a = 0.248
-        # b = 1.632
-        # c = -1.940
-        # d = 0.033
-        # e = -1.085
-        # f = 2.112
-        
-        # h2_off = h1_off - eta_off*(h1_off-h2s_off)
-                
-        # #Q2_off = CP.PropsSI('Q','Hmass',h2_off * 1000 ,'P',p2_nom  * 1000, medium)
-        
-        # T2_off = CP.PropsSI('T','Hmass',h2_off * 1000,'P',p2  * 1000, medium) - 273.15 #C
-        # rho2_off =  CP.PropsSI('Dmass','T',T2_off + 273.15,'P',p2  * 1000, medium)   #kg/m^3
-        # V2_off = m_off/rho2_off
-                    
-        # dh_off = h1_off - h2_off
-                    
-        # eta_off_calc = (a + b * (dh_off/dh_nom) + c * (dh_off/dh_nom)**2 + d*(V2_off/V2_nom) + e*(V2_off/V2_nom)**2 + f*(dh_off/dh_nom)*(V2_off/V2_nom))*eta_nom
-                
-        # d_eta = math.fabs(eta_off - eta_off_calc)
 
 T_in = 210 # C
 p_in = 845 # kPa(a)
@@ -185,4 +147,6 @@ medium = 'Toluene'
 turbina = TurbineDesign(T_in, p_in, p_out, mf, medium)
 turbina.efficiency_estimation()
 eta_iT = turbina.eta_iT
-print(eta_iT)
+N_iT = turbina.N_iT
+print('eta_iT: ',eta_iT)
+print('N_iT')
