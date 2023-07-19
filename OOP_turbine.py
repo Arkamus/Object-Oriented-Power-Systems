@@ -73,6 +73,7 @@ class TurbineDesign:
         * Macchi E, Astolfi M. Organic rankine cycle (ORC) power systems: Technologies and
           applications. Duxford, United Kingdom: Woodhead Publishing is an imprint of Elsevier;
           2017.
+          
         """
 
         self.rho_turbine_in = CP.PropsSI('Dmass', 'T', self.T_in+273.15, 'P', self.p_in*1000, self.medium)
