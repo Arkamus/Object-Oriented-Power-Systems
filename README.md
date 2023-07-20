@@ -1,4 +1,4 @@
-# come_back_test
+# Object-Oriented-Power-Systems
 This project is aimed to create free library for evaluation, optimization and simulation of power systems. It is based on previous attemps to write this kind of tool, which has been
 
 General goal is to write series of objects representing main equipment used in power systems like turbines, pumps, boilers, heat exchangers, pipes and other. They can be used alone, but also can be combined to build wide range of power systems like:
