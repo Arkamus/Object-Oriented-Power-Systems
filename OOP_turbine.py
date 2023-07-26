@@ -5,9 +5,10 @@ Created on Wed Apr  5 11:51:24 2023
 @author: Arek
 """
 import math
+import numpy as np
 import CoolProp.CoolProp as CP
 import matplotlib.pyplot as plt
-import numpy as np
+from scipy.optimize import least_squares
 
 class TurbineDesign:
     
@@ -150,7 +151,7 @@ class TurbineDesign:
         self.eta_iT = eta_iT
         self.h_out = self.h_in-self.eta_iT*(self.h_in-self.h_out_s)
         self.T_out = CP.PropsSI('T', 'Hmass', self.h_out*1000, 'P', self.p_out*1000, self.medium)-273.15
-        self.s_out = CP.PropsSI('Smass', 'T', self.T_out*1000, 'P', self.p_out*1000, self.medium)/1000
+        self.s_out = CP.PropsSI('Smass', 'T', self.T_out+273.15, 'P', self.p_out*1000, self.medium)/1000
         self.N_iT = self.mf*(self.h_in-self.h_out)
         
     def Ts_diagram(self):
@@ -159,6 +160,29 @@ class TurbineDesign:
         Plots Temperature - specific entropy (T-s) diagram of vapour expansion in turbine.
         !!!WARNING!!!
         Drawing can be done only if previous calculations with fixed or estimated efficiency were done.
+        
+        Physical values:
+            
+        T_in - temperature at turbine inlet, st.C
+        T_out - temperature at turbine outlet, st.C
+        T_out_s - temperature at turbine outlet when turbine efficiency = 1.0, st.C
+        
+        p_in - pressure at turbine inelt, kPa(a)
+        p_out - pressure at turbine outlet, kPa(a)
+        
+        T_crit - ciritical temperature of working fluid, st.C
+        P_crit - critical pressure of working fluid, kPa(a)
+        s_crit - specific entropy at critical point (T_crit, P_crit), kJ/(kg*st.C)
+        
+        X - vapour quality in range 0.0-1.0, where 0.0 - 100% liquid/0% vapour and 1.0 - 0% liquid/100% vapour
+        
+        T_X0 - temperature at saturation line X=0.0, st.C
+        T_X1 - temperature at saturation line X=1.0, st.C
+        T_X - combined data for both boundary conditions X=0 and X=1 to draw saturation line, st.C
+        
+        s_X0 - specific entropy at saturation line X=0.0, kJ/(kg*st.C)
+        s_X1 - specific entropy at saturation line X=1.0, kJ/(kg*st.C)
+        s_X - combined data for both boundary conditions X=0 and X=1 to draw saturation line, kJ/(kg*st.C)
         """
         
         fig, ax = plt.subplots(nrows = 1, ncols = 1, dpi = 400)
@@ -172,18 +196,37 @@ class TurbineDesign:
         ax.text(self.s_in, self.T_in, '$T_{in}$')
         
         'Turbine outlet - isentropic, after expansion in trubine with eta_iT = 1.0'
-        ax.scatter(self.s_out_s, self.T_out_s, marker = 'x', c = 'red')
-        ax.text(self.s_out_s, self.T_out_s, '$T_{out,s}$')
+        #ax.scatter(self.s_out_s, self.T_out_s, marker = 'x', c = 'red')
+        #ax.text(self.s_out_s, self.T_out_s, '$T_{out,s}$')
         
         'Turbine outlet'
         ax.scatter(self.s_out, self.T_out, marker = 'x', c = 'red')
         ax.text(self.s_out, self.T_out, '$T_{out}$')
         
         'Isentropic expansion line'
-        ax.plot([self.s_in, self.s_out_s],[self.T_in, self.T_out_s], label = 'Isentropic expansion line', linestyle = ':')
+        #ax.plot([self.s_in, self.s_out_s],[self.T_in, self.T_out_s], label = 'Isentropic expansion line', linestyle = ':')
         
         'Estimated expansion line'
         ax.plot([self.s_in, self.s_out],[self.T_in, self.T_out], label = 'Estimated expansion line', linestyle = ':')
+        
+        'Marking critical point'
+        p_crit = CP.PropsSI('Pcrit', self.medium)/1000
+        T_crit = CP.PropsSI('Tcrit', self.medium)-273.15
+        s_crit = CP.PropsSI('Smass','T',T_crit+273.15,'P', p_crit*1000, self.medium)/1000
+    
+        ax.scatter(s_crit, T_crit, marker = 'x')
+        
+        'Ploting saturation line'
+        num = 100
+        T_X0 = np.linspace(0, T_crit,num=num, endpoint = False)
+        T_X1 = np.linspace(T_crit, 0, num=num, endpoint = True)
+        T_X = np.concatenate((T_X0,T_X1))
+        
+        s_X0 = CP.PropsSI('Smass', 'T', T_X0+273.15, 'Q', np.full(num,0), self.medium)/1000
+        s_X1 = CP.PropsSI('Smass', 'T', T_X1+273.15, 'Q', np.full(num,1), self.medium)/1000
+        s_X = np.concatenate((s_X0,s_X1))
+        
+        ax.plot(s_X,T_X, c='grey', label = 'Saturation line')
         
         'General diagram settings'
         yticks = ax.get_yticks()
@@ -193,7 +236,7 @@ class TurbineDesign:
         max_x_tick = max(xticks)
         
         ax.set_ylim(bottom = 0.0, top = max_y_tick)
-        ax.set_xlim(left = 0.0, right = max_x_tick)
+        ax.set_xlim(left = None, right = max_x_tick)
         
         yticks = ax.get_yticks()
         xticks = ax.get_xticks()
@@ -213,31 +256,115 @@ class TurbineDesign:
         ax.set_ylim(bottom = 0.0, top = max_y_tick+y_tick_step)
         ax.set_xlim(left = 0.0, right = max_x_tick+x_tick_step)
         
-        'Ploting inlet presure line'
-        p_out_line = np.full(len_xticks, self.p_out)
-        s_out_line = xticks
-        T_out_line = CP.PropsSI('T', 'P',  p_out_line*1000, 'S', s_out_line*1000, self.medium)-273.15
+        'Ploting inlet presure lines'
+        p_in_ticks = np.full(num, self.p_in)
+        p_out_ticks = np.full(num, self.p_out)
+        s_out_ticks = np.linspace(min_x_tick, max_x_tick+x_tick_step,num)
+        
+        p_in_line = CP.PropsSI('T','P',p_in_ticks*1000,'Smass', s_out_ticks*1000, self.medium)-273.15
+        p_out_line = CP.PropsSI('T','P',p_out_ticks*1000,'Smass', s_out_ticks*1000, self.medium)-273.15
+        
+        ax.plot(s_out_ticks, p_in_line, c = 'grey', linestyle = ':', label = '$p_{in}=$'+f'{self.p_in} kPa(a)')
+        ax.plot(s_out_ticks, p_out_line, c = 'grey', linestyle = ':', label = '$p_{out}=$'+f'{self.p_out} kPa(a)')
+        
+        ax.set_xlim(left = min(s_X), right = max_x_tick+x_tick_step)
         
         'Legend'
-        ax.legend(title = f'medium = {self.medium}\n' + f'number of stages = {self.n_stages} \n'+'$\eta_{iT}$='+f'{round(self.eta_iT,4)}', loc='lower right')
+        ax.legend(title = f'number of stages = {self.n_stages} \n'+'$\eta_{iT}$='+f'{round(self.eta_iT,4)}', loc='best')
         
         'Title'
-        ax.set_title(label = 'Turbine T-s diagram')
+        ax.set_title(label = f' T-s diagram - {self.medium}')
         
         'Adding grid'
         ax.grid(True, color = "grey", linestyle = "--", axis = 'both')
         
         plt.tight_layout()
     
-    def picture(self):
+    def off_design(self, T_in_off, p_in_off, p_out_off):
         """
-        Simple visualization of turbine.
+        Calculation of turbine parameters under conditions different than nominal (if nominam is design, than non-nominal is off-design).
+        
+        Input values:
+        T_in_off    - temperature at turbine inlet under off-design conditions, st.C
+        p_in_off    - pressure at turbine inlet under off-design conditions, kPa(a)
+        p_out_off   - pressure at urbine outlet under off-design conditions, kPa(a)
+        
+        
+        Other values:
+        mf          - mass flow of working fluid through turbine under design conditions, kg/s
+        rho_in      - density at turbine inlet under design conditions, kg/m^3
+        rho_out     - density at turbine outlet under off design conditions, kg/m^3
+        V_out       - volumetric flow at turbine outlet under design conditions, m^3/s
+        ve_in       - specific volume at turbine inlet under design conditions, m^3/kg
+        delta_h     - difference of entalphy at turbine inlet h_in and turbine outlet h_out under design conditions, kJ/ks
+        s_out_s     - specific entropy at turbine outlet under off-design condition when eta_iT = 1.0, kJ/(kg*st.C)
+        
+        mf_off      - mass flow of working fluid through turbine under off-design conditions, kg/s
+        h_in_off    - specific enthalpy at turbine inlet under off-design conditions, kJ/kg
+        s_in_off    - specific etropy at turbine inlet under off-design condition, kJ/(kg*st.C)
+        rho_in_off  - density at turbine inlet under off-design condtions, kg/m^3
+        ve_in_off   - volueme at turbine inlet uner design conditions, m^3/kg
+        h_out_s_off - specific enthalpy at turbine outlet under off-design condition when eta_iT = 1.0, kJ/(kg*st.C)
+        
+        Sources:
+        * https://en.wikipedia.org/wiki/Ellipse_Law - Stodola Cone Law
         """
         
-        pass
 
-test_turbine1 = TurbineDesign(155, 3620.0, 1568.5, 237.71, 'R125')
-test_turbine1.efficiency_estimation(n_stages= 1)
-test_eta_iT1 = test_turbine1.eta_iT
-test_turbine1.Ts_diagram()
+        self.p_out_off = p_out_off
+        
+        'Calculating entalpie and entropies'
+        self.delta_h = self.h_in - self.h_out_s
+        self.h_in_off = CP.PropsSI('Hmass', 'T', T_in_off+273.15, 'P', p_in_off*1000, self.medium)/1000
+        s_in_off = CP.PropsSI('Smass', 'T', T_in_off+273.15, 'P', p_in_off*1000, self.medium)/1000
+        s_out_s_off = s_in_off
+        self.h_out_s_off = CP.PropsSI('Hmass', 'Smass', s_out_s_off*1000, 'P', p_out_off*1000, self.medium)/1000
+        
+        'Calculating densities'
+        rho_in = CP.PropsSI('Dmass', 'T', self.T_in+273.15, 'P', self.p_in*1000, self.medium)
+        rho_out = CP.PropsSI('Dmass', 'T', self.T_out+273.15, 'P', self.p_out*1000, self.medium)
+        rho_in_off = CP.PropsSI('Dmass', 'T', T_in_off+273.15, 'P', p_in_off*1000, self.medium)
+        
+        'Calculating specific volumes'
+        ve_in = 1/rho_in
+        ve_in_off = 1/rho_in_off
+        
+        'Calculating mass flow through turbine under off-design conditions using Stodola Cone Law'
+        self.mf_off  = self.mf*(((p_in_off**2-p_out_off**2)/(self.p_in**2-self.p_out**2))*(self.p_in*ve_in)/(p_in_off*ve_in_off))**0.5
+
+        'Calculating volumetric flow at turbine outlet under design conditions'
+        self.V_out = self.mf/rho_out
+        
+        'Calculation of turbine efficiency under off-design conditions'
+        self.eta_iT_off = float(least_squares(fun = self.off_design_equation, x0 = self.eta_iT, bounds = (0.0,1.0)).x)       
+ 
+        'Calculation turbines off-design power'
+    
+    def off_design_equation(self, eta_iT_start):
+        
+        "Equation to iteratively calculate turbine efficiency under off-design conditions"
+        a = 0.248
+        b = 1.632
+        c = -1.940
+        d = 0.033
+        e = -1.085
+        f = 2.112
+        
+        'Calculation of iterated denisty at turbine outlet under off design conditions'
+        self.h_out_off = self.h_in_off-eta_iT_start*(self.h_in_off-self.h_out_s_off)
+        delta_h_off = self.h_in_off-self.h_out_off
+        
+        'Calculation of iterated denisty at turbine outlet under off design conditions'
+        rho_out_off = CP.PropsSI('Dmass', 'Hmass', self.h_out_off*1000, 'P', self.p_out_off*1000, self.medium)
+        V_out_off = self.mf_off/rho_out_off
+        
+        'Calculation of turbine efficiency under of design conditions'
+        eta_iT_off = (a + b * (delta_h_off/self.delta_h) + c * (delta_h_off/self.delta_h)**2 + d*(V_out_off/self.V_out) + e*(V_out_off/self.V_out)**2 + f*(delta_h_off/self.delta_h)*(V_out_off/self.V_out))*self.eta_iT
+        
+        'Acctual objective function for minimization '
+        delta_eta = math.fabs(eta_iT_off-eta_iT_start)
+        
+        return delta_eta
+
+
         
