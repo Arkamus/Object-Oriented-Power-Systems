@@ -1,16 +1,10 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Wed Apr  5 11:51:24 2023
-
-@author: Arek
-"""
 import math
 import numpy as np
 import CoolProp.CoolProp as CP
 import matplotlib.pyplot as plt
 from scipy.optimize import least_squares
 
-class TurbineDesign:
+class Turbine:
     
     """
     Class to handle turbine calculations. It is one of elements that power systems are build like heat exchangers and pumps.
@@ -144,7 +138,7 @@ class TurbineDesign:
         h_in - enthalpy of vapour at turbine inlet, kJ/kg
         s_in - entropy of vapour at turbine inlet, kJ/(kg*C) or kJ/(kg*K)
         h_out - enthalpy of vapour at turbine outlet, kJ/kg
-        h_out_s - enthalpy of vapour at tyrbine outlet after ideal (eta=1.0) expansion in turbine, kJ/kg
+        h_out_s - enthalpy of vapour at turbine outlet after ideal (eta=1.0) expansion in turbine, kJ/kg
         s_out - entropy of vapur at turbine outlet
         s_out_s - entropy of vapour at turbine outlet after ideal (eta = 1.0) expansion in turbine, kJ/(kg*C) or kJ/(kg*K)
         """
@@ -153,7 +147,104 @@ class TurbineDesign:
         self.T_out = CP.PropsSI('T', 'Hmass', self.h_out*1000, 'P', self.p_out*1000, self.medium)-273.15
         self.s_out = CP.PropsSI('Smass', 'T', self.T_out+273.15, 'P', self.p_out*1000, self.medium)/1000
         self.N_iT = self.mf*(self.h_in-self.h_out)
+    
+    def off_design(self, T_in_off, p_in_off, p_out_off):
+        """
+        Calculation of turbine parameters under conditions different than nominal (if nominam is design, than non-nominal is off-design).
         
+        Input values:
+        T_in_off    - temperature at turbine inlet under off-design conditions, st.C
+        p_in_off    - pressure at turbine inlet under off-design conditions, kPa(a)
+        p_out_off   - pressure at urbine outlet under off-design conditions, kPa(a)
+        
+        
+        Other values:
+        mf          - mass flow of working fluid through turbine under design conditions, kg/s
+        rho_in      - density at turbine inlet under design conditions, kg/m^3
+        rho_out     - density at turbine outlet under off design conditions, kg/m^3
+        V_out       - volumetric flow at turbine outlet under design conditions, m^3/s
+        ve_in       - specific volume at turbine inlet under design conditions, m^3/kg
+        delta_h     - difference of entalphy at turbine inlet h_in and turbine outlet h_out under design conditions, kJ/ks
+        s_out_s     - specific entropy at turbine outlet under off-design condition when eta_iT = 1.0, kJ/(kg*st.C)
+        
+        mf_off      - mass flow of working fluid through turbine under off-design conditions, kg/s
+        h_in_off    - specific enthalpy at turbine inlet under off-design conditions, kJ/kg
+        s_in_off    - specific etropy at turbine inlet under off-design condition, kJ/(kg*st.C)
+        rho_in_off  - density at turbine inlet under off-design condtions, kg/m^3
+        ve_in_off   - volueme at turbine inlet uner design conditions, m^3/kg
+        h_out_s_off - specific enthalpy at turbine outlet under off-design condition when eta_iT = 1.0, kJ/(kg*st.C)
+        
+        Sources:
+        * https://en.wikipedia.org/wiki/Ellipse_Law - Stodola Cone Law
+        """
+        
+        self.p_out_off = p_out_off
+        
+        'Calculating entalpie and entropies'
+        self.delta_h = self.h_in - self.h_out_s
+        self.h_in_off = CP.PropsSI('Hmass', 'T', T_in_off+273.15, 'P', p_in_off*1000, self.medium)/1000
+        s_in_off = CP.PropsSI('Smass', 'T', T_in_off+273.15, 'P', p_in_off*1000, self.medium)/1000
+        s_out_s_off = s_in_off
+        self.h_out_s_off = CP.PropsSI('Hmass', 'Smass', s_out_s_off*1000, 'P', p_out_off*1000, self.medium)/1000
+        
+        'Calculating densities'
+        rho_in = CP.PropsSI('Dmass', 'T', self.T_in+273.15, 'P', self.p_in*1000, self.medium)
+        rho_out = CP.PropsSI('Dmass', 'T', self.T_out+273.15, 'P', self.p_out*1000, self.medium)
+        rho_in_off = CP.PropsSI('Dmass', 'T', T_in_off+273.15, 'P', p_in_off*1000, self.medium)
+        
+        'Calculating specific volumes'
+        ve_in = 1/rho_in
+        ve_in_off = 1/rho_in_off
+        
+        'Calculating mass flow through turbine under off-design conditions using Stodola Cone Law'
+        self.mf_off  = self.mf*(((p_in_off**2-p_out_off**2)/(self.p_in**2-self.p_out**2))*(self.p_in*ve_in)/(p_in_off*ve_in_off))**0.5
+
+        'Calculating volumetric flow at turbine outlet under design conditions'
+        self.V_out = self.mf/rho_out
+        
+        'Calculation of turbine efficiency under off-design conditions'
+        self.eta_iT_off = float(least_squares(fun = self.off_design_equation, x0 = self.eta_iT, bounds = (0.0,1.0)).x)       
+        
+        'Temperature at turbine outlet under off-design conditions'
+        self.T_out_off = CP.PropsSI('T', 'Hmass', self.h_out_off*1000, 'P', self.p_out_off*1000, self.medium)-273.15
+        
+        'Calculation turbine off-design power'
+        self.N_iT_off = (self.h_in_off-self.h_out_off)*self.mf_off  
+    
+    def off_design_equation(self, eta_iT_start):
+        
+        """
+        Equation to iteratively calculate turbine efficiency under off-design conditions
+        
+        Source:
+        * Pili R, Siamisiis N, Agromayor R, Nord LO, Wieland C, Spliethoff H. Efficiency
+          Correlations for Off-Design Performance Prediction of ORC Axial-Flow Turbines:
+          Proceedings of the 5th International Seminar on ORC Power Systems; 2019.
+        """
+
+        'Calculation of iterated denisty at turbine outlet under off design conditions'
+        self.h_out_off = self.h_in_off-eta_iT_start*(self.h_in_off-self.h_out_s_off)
+        delta_h_off = self.h_in_off-self.h_out_off
+        
+        'Calculation of iterated denisty at turbine outlet under off design conditions'
+        rho_out_off = CP.PropsSI('Dmass', 'Hmass', self.h_out_off*1000, 'P', self.p_out_off*1000, self.medium)
+        V_out_off = self.mf_off/rho_out_off
+        
+        'Calculation of turbine efficiency under of design conditions'
+        eta_iT_off = (0.248 + 1.632 * (delta_h_off/self.delta_h) + (-1.940) * (delta_h_off/self.delta_h)**2 + 0.033*(V_out_off/self.V_out) + (-1.085)*(V_out_off/self.V_out)**2 + 2.112*(delta_h_off/self.delta_h)*(V_out_off/self.V_out))*self.eta_iT
+        
+        'Acctual objective function for minimization '
+        delta_eta = math.fabs(eta_iT_off-eta_iT_start)
+        
+        return delta_eta
+    
+    def off_design_plots(self):
+        """
+        Ploting off-design characterisitcs of turbine can be usefoul for presenting turbine work under off-design conditions.
+        Because there is a lot of different ways to present this on plots this section is yet to be determined in further works.
+        """
+        pass
+    
     def Ts_diagram(self):
         
         """
@@ -278,93 +369,4 @@ class TurbineDesign:
         'Adding grid'
         ax.grid(True, color = "grey", linestyle = "--", axis = 'both')
         
-        plt.tight_layout()
-    
-    def off_design(self, T_in_off, p_in_off, p_out_off):
-        """
-        Calculation of turbine parameters under conditions different than nominal (if nominam is design, than non-nominal is off-design).
-        
-        Input values:
-        T_in_off    - temperature at turbine inlet under off-design conditions, st.C
-        p_in_off    - pressure at turbine inlet under off-design conditions, kPa(a)
-        p_out_off   - pressure at urbine outlet under off-design conditions, kPa(a)
-        
-        
-        Other values:
-        mf          - mass flow of working fluid through turbine under design conditions, kg/s
-        rho_in      - density at turbine inlet under design conditions, kg/m^3
-        rho_out     - density at turbine outlet under off design conditions, kg/m^3
-        V_out       - volumetric flow at turbine outlet under design conditions, m^3/s
-        ve_in       - specific volume at turbine inlet under design conditions, m^3/kg
-        delta_h     - difference of entalphy at turbine inlet h_in and turbine outlet h_out under design conditions, kJ/ks
-        s_out_s     - specific entropy at turbine outlet under off-design condition when eta_iT = 1.0, kJ/(kg*st.C)
-        
-        mf_off      - mass flow of working fluid through turbine under off-design conditions, kg/s
-        h_in_off    - specific enthalpy at turbine inlet under off-design conditions, kJ/kg
-        s_in_off    - specific etropy at turbine inlet under off-design condition, kJ/(kg*st.C)
-        rho_in_off  - density at turbine inlet under off-design condtions, kg/m^3
-        ve_in_off   - volueme at turbine inlet uner design conditions, m^3/kg
-        h_out_s_off - specific enthalpy at turbine outlet under off-design condition when eta_iT = 1.0, kJ/(kg*st.C)
-        
-        Sources:
-        * https://en.wikipedia.org/wiki/Ellipse_Law - Stodola Cone Law
-        """
-        
-
-        self.p_out_off = p_out_off
-        
-        'Calculating entalpie and entropies'
-        self.delta_h = self.h_in - self.h_out_s
-        self.h_in_off = CP.PropsSI('Hmass', 'T', T_in_off+273.15, 'P', p_in_off*1000, self.medium)/1000
-        s_in_off = CP.PropsSI('Smass', 'T', T_in_off+273.15, 'P', p_in_off*1000, self.medium)/1000
-        s_out_s_off = s_in_off
-        self.h_out_s_off = CP.PropsSI('Hmass', 'Smass', s_out_s_off*1000, 'P', p_out_off*1000, self.medium)/1000
-        
-        'Calculating densities'
-        rho_in = CP.PropsSI('Dmass', 'T', self.T_in+273.15, 'P', self.p_in*1000, self.medium)
-        rho_out = CP.PropsSI('Dmass', 'T', self.T_out+273.15, 'P', self.p_out*1000, self.medium)
-        rho_in_off = CP.PropsSI('Dmass', 'T', T_in_off+273.15, 'P', p_in_off*1000, self.medium)
-        
-        'Calculating specific volumes'
-        ve_in = 1/rho_in
-        ve_in_off = 1/rho_in_off
-        
-        'Calculating mass flow through turbine under off-design conditions using Stodola Cone Law'
-        self.mf_off  = self.mf*(((p_in_off**2-p_out_off**2)/(self.p_in**2-self.p_out**2))*(self.p_in*ve_in)/(p_in_off*ve_in_off))**0.5
-
-        'Calculating volumetric flow at turbine outlet under design conditions'
-        self.V_out = self.mf/rho_out
-        
-        'Calculation of turbine efficiency under off-design conditions'
-        self.eta_iT_off = float(least_squares(fun = self.off_design_equation, x0 = self.eta_iT, bounds = (0.0,1.0)).x)       
- 
-        'Calculation turbines off-design power'
-    
-    def off_design_equation(self, eta_iT_start):
-        
-        "Equation to iteratively calculate turbine efficiency under off-design conditions"
-        a = 0.248
-        b = 1.632
-        c = -1.940
-        d = 0.033
-        e = -1.085
-        f = 2.112
-        
-        'Calculation of iterated denisty at turbine outlet under off design conditions'
-        self.h_out_off = self.h_in_off-eta_iT_start*(self.h_in_off-self.h_out_s_off)
-        delta_h_off = self.h_in_off-self.h_out_off
-        
-        'Calculation of iterated denisty at turbine outlet under off design conditions'
-        rho_out_off = CP.PropsSI('Dmass', 'Hmass', self.h_out_off*1000, 'P', self.p_out_off*1000, self.medium)
-        V_out_off = self.mf_off/rho_out_off
-        
-        'Calculation of turbine efficiency under of design conditions'
-        eta_iT_off = (a + b * (delta_h_off/self.delta_h) + c * (delta_h_off/self.delta_h)**2 + d*(V_out_off/self.V_out) + e*(V_out_off/self.V_out)**2 + f*(delta_h_off/self.delta_h)*(V_out_off/self.V_out))*self.eta_iT
-        
-        'Acctual objective function for minimization '
-        delta_eta = math.fabs(eta_iT_off-eta_iT_start)
-        
-        return delta_eta
-
-
-        
+        plt.tight_layout()  
