@@ -205,6 +205,9 @@ class Turbine:
         'Calculation of turbine efficiency under off-design conditions'
         self.eta_iT_off = float(least_squares(fun = self.off_design_equation, x0 = self.eta_iT, bounds = (0.0,1.0)).x)       
         
+        'Calculating temperature at turbine outlet'
+        self.h_out_off = self.h_in_off-self.eta_iT_off*(self.h_in_off-self.h_out_s_off)
+        
         'Temperature at turbine outlet under off-design conditions'
         self.T_out_off = CP.PropsSI('T', 'Hmass', self.h_out_off*1000, 'P', self.p_out_off*1000, self.medium)-273.15
         

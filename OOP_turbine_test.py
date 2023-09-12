@@ -6,6 +6,7 @@ import CoolProp.CoolProp as CP
 
 from OOP_turbine import Turbine
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+from matplotlib.lines import Line2D
 
 class TestOOPTurbine(unittest.TestCase):
       
@@ -93,11 +94,15 @@ class TestOOPTurbine(unittest.TestCase):
         'Creating sample array of parameters for off design calculations'
         num = 100
         
+        'Creating min and max values of pressure for creating off-design dataset'
+        
         p_in_off_ar = np.linspace(1568.5, 3617.7, num=num, endpoint = True)
         
         delta_T_sup = 80
-         
-        T_in_off_ar = CP.PropsSI('T', 'P', p_in_off_ar*1000, 'Q', np.full(num,1), 'R125')-273.15 + delta_T_sup
+        
+        T_in_off_min = CP.PropsSI('T', 'P', min(p_in_off_ar)*1000, 'Q', 1, 'R125')-273.15 + delta_T_sup
+        
+        T_in_off_ar = np.linspace(T_in_off_min, T_in, num, endpoint = True) #CP.PropsSI('T', 'P', p_in_off_ar*1000, 'Q', np.full(num,1), 'R125')-273.15 + delta_T_sup
         
         'Creating list to collect results of off-design calculations'
         eta_iT_off_ar = []
@@ -123,6 +128,7 @@ class TestOOPTurbine(unittest.TestCase):
         ax1.scatter(p_in, test_eta_iT1, marker ='x', c = 'red')
         ax1.set_ylabel('Efficiency $\eta_{iT}$, -')
         ax1.set_ylim(0.0,1.0)
+        ax1.set_yticks(np.arange(0.0,1.1,0.1))
         
         'Ploting off-design power'
         ax2.plot(p_in_off_ar, N_iT_off_ar, label = 'N')
@@ -139,7 +145,18 @@ class TestOOPTurbine(unittest.TestCase):
         ax4.set_ylabel('Mass flow, kg/s')
         ax4.set_xlabel(r'Inlet pressure $p_{in}$, kPa(a)')
         ax4.scatter(p_in, mf, marker ='x', c = 'red')
+        ax4.set_xticks(np.arange(1500,3800,100))
+        ax4.set_xticklabels(ax4.get_xticks(),rotation = 90)
         
+        'List of minimal values of power, temperature at turbine outlet and mass flow'
+        min_vals = [min(N_iT_off_ar), min(T_out_off_ar), min(mf_off_ar)]
+        
+        'Corection of yticks'
+        for ax, min_val in zip(axs[1:], min_vals):
+            yticks = ax.get_yticks()
+            corected_yticks = [y for y in yticks if y>=min_val]
+            ax.set_yticks(corected_yticks)
+            
         plt.suptitle('Turbine off-design characteritics')
         
         for ax in axs:
@@ -179,23 +196,37 @@ class TestOOPTurbine(unittest.TestCase):
         'Creating sample array of parameters for off design calculations'
         num = 100
         
-        p_in_off_ar  = np.linspace(1568.5, 3617.7, num=num, endpoint = True)
-        p_out_off_ar = np.linspace(1568.5, 3617.7, num=num, endpoint = True)
+        'Calculating minimal and maximal pressure for off-design calculations'
+        p_min = 1500
+        p_max = 1.1*p_in # It is assumed that parameters of turbine can be exceeded by aprox. 10% - this is simplification
         
+        'Aray of off design inlet and outlet pressure'
+        p_in_off_ar  = np.linspace(p_min, p_max, num=num, endpoint = True) #np.linspace(1568.5, 3617.7, num=num, endpoint = True)
+        p_out_off_ar = p_in_off_ar #np.linspace(1568.5, 3617.7, num=num, endpoint = True)
+        
+        'Superheating of vapour'
         delta_T_sup = 80
-         
-        T_in_off_ar = CP.PropsSI('T', 'P', p_in_off_ar*1000, 'Q', np.full(num,1), 'R125')-273.15 + delta_T_sup
         
+        'Calculating minimal and maximal temperature'
+        T_in_off_min = CP.PropsSI('T', 'P', p_out*1000, 'Q', 1, 'R125')-273.15 + delta_T_sup
+        T_in_off_max = 1.1*T_in     # It is assumed that parameters of turbine can be exceeded by aprox. 10% - this is simplification
+        
+        'Aray of off design inlet temperature'
+        T_in_off_ar = np.linspace(T_in_off_min, T_in, num=num, endpoint = True) #CP.PropsSI('T', 'P', p_in_off_ar*1000, 'Q', np.full(num,1), 'R125')-273.15 + delta_T_sup
+        
+        'Combining arays to create frame of changing prameters'
         p_in_off_ar = np.tile(p_in_off_ar, num)
         T_in_off_ar =  np.tile(T_in_off_ar, num)
         p_out_off_ar = np.repeat(p_out_off_ar, num)
         
+        'Creating dict of parameters for further data frame'
         off_design_dict = {'T_in_off' : T_in_off_ar,
                            'p_in_off' : p_in_off_ar,
                            'p_out_off' : p_out_off_ar}
 
         off_design_frame = pd.DataFrame(off_design_dict)
         
+        'Ensuring that pressure at inlet always exceeds pressure at inlet'
         off_design_frame = off_design_frame[off_design_frame['p_out_off']<=off_design_frame['p_in_off']]
         
         'Creating list to collect results of off-design calculations'
@@ -213,7 +244,7 @@ class TestOOPTurbine(unittest.TestCase):
             mf_off_ar.append(test_turbine1.mf_off)
         
         'Ploting set of diagrams to visualize '
-        fig1, axs = plt.subplots(nrows = 4, ncols = 1, dpi = 400, figsize = (5,10), sharex = True)
+        fig1, axs = plt.subplots(nrows = 4, ncols = 1, dpi = 400, figsize = (5,10), sharex = True, layout='constrained')
         
         ((ax1,ax2, ax3,ax4)) = axs
         
@@ -230,13 +261,13 @@ class TestOOPTurbine(unittest.TestCase):
         heatmap4 = ax4.scatter(off_design_frame.p_in_off, off_design_frame.p_out_off, c = mf_off_ar, cmap = 'jet', marker = '.', label = 'eta')
         
         'Customizing shared x-axis'
-        xticks = [p_out]+list(ax4.get_xticks())+[p_in]
+        xticks = [p_min]+list(ax4.get_xticks())+[p_max]
         xticks.sort()
         
         ax4.set_xticks(xticks)
-        ax4.set_xlim(p_out, p_in)
+        ax4.set_xlim(p_min, p_max)
         ax4.set_xlabel(r'Inlet pressure $p_{in}$, kPa(a)')
-        ax4.set_xticklabels(labels = [1000.0, 1500.0, 1568.5, 2000.0, 2500.0, 3000.0, 3500.0, '\n3620.0', 4000.0])
+        #ax4.set_xticklabels(labels = [1000.0, 1500.0, 1568.5, 2000.0, 2500.0, 3000.0, 3500.0, '\n3620.0', 4000.0])
 
         plt.suptitle('Turbine off-design characteritics')
         
@@ -254,22 +285,29 @@ class TestOOPTurbine(unittest.TestCase):
         labels = ['Efficiency $\eta_{iT}$, -', 'Power $N_{iT}$, kW', 'Outlet temperature $T_{out}$, $^\circ$C', 'Mass flow, kg/s']
         
         'List of minimal values of colorbar ticks'
-        cbar_minticks = [0, min(N_iT_off_ar), min(T_out_off_ar), min(mf_off_ar)]
+        cbar_minticks = np.array([min(eta_iT_off_ar), float(min(N_iT_off_ar)), min(T_out_off_ar), min(mf_off_ar)])
+        cbar_minticks.flatten()
+        
         'List of maximal values of colorbar ticks'
-        cbar_maxticks = [1, max(N_iT_off_ar), max(T_out_off_ar), max(mf_off_ar)]
+        cbar_maxticks = np.array([max(eta_iT_off_ar), float(max(N_iT_off_ar)), max(T_out_off_ar), max(mf_off_ar)])
+        cbar_maxticks.flatten()
+        
+        'Creating lengend element for plots'
+        legend_element = [Line2D([0],[0], c = 'black', linestyle = '--', linewidth = 0.5)]
         
         for ax, hmap, label, mintick, maxtick in zip(axs, heatmaps, labels, cbar_minticks, cbar_maxticks):
-            ax.set_yticks(list(ax.get_xticks())+[p_in, p_out])
-            ax.set_ylim(p_out, p_in)
+            ax.set_yticks(list(ax.get_xticks())+[p_min, p_max])
+            ax.set_ylim(p_min, p_max)
             ax.set_ylabel('Outlet pressure $p_{out}$, \n kPa(a)')
-            cbar = fig1.colorbar(hmap, ticks = np.linspace(mintick, maxtick, 10, True), ax = ax, label = label)
-            #cbar_ticks = list(cbar.get_ticks())
-            #cbar_ticks = [mintick]+cbar_ticks+[maxtick]
-            #cbar = fig1.colorbar(hmap,ticks = cbar_ticks, ax = ax, label = label)
+            ax.grid(axis ='both', linestyle = '--')
+            ax.axhline(p_out, c = 'black', linestyle = '--', linewidth = 0.5)
+            ax.axvline(p_in, c = 'black', linestyle = '--', linewidth = 0.5)
+            ax.set_axisbelow(True)
             
-            #print(cbar_ticks)
+            fig1.colorbar(hmap, ticks = np.linspace(mintick, maxtick, 10, True), ax = ax, label = label)
         
-        plt.tight_layout()
+        fig1.legend(loc = 'outside lower center', handles = legend_element, labels = ['Design point at crossing lines',])
+        
             
 if __name__=='__main__':
  	
