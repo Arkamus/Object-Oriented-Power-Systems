@@ -9,6 +9,7 @@ z_O2  = 0.0610
 z_H2O = 0.1310
 z_N2  = 0.7410
 
+
 T_fg_hot = 510 # Temperature of flue gas, st.C
 T_fg_min = 125 # Minimal allowed temperature of flue gas to avoid condensation of water (based on OEM of gas fired engine), st.V
 m_fg = 0.65    # Mass flow of flue gas, kg/s
