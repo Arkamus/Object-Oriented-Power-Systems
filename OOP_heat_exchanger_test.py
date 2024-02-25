@@ -1,11 +1,14 @@
 import unittest
+import pandas as pd
 
 from OOP_heat_exchanger import HeatExchanger
+
+pd.options.display.max_columns = None
 
 class TestOOP_heat_exchanger(unittest.TestCase):
 
     """
-    Test case 0 - check if flow_arrangement has 
+    Test case 0 - check if not allowed flow_arrangement raises error as expeced 
     """
     def test_ValueError(self):
 
@@ -16,7 +19,7 @@ class TestOOP_heat_exchanger(unittest.TestCase):
                                    flow_arrangement = 'kąter')
     
     
-    def test_HeatExchanger(self):
+    def test_HeatExchanger1(self):
         
         """
         Test case 1 - heat transfer in counter flow without phase change eg. gas-to-gas, liquid-to-liquid, gas-to-liquid or liquid-to-gas. 
@@ -30,11 +33,16 @@ class TestOOP_heat_exchanger(unittest.TestCase):
                                   flow_arrangement = 'counter')
         
         
-        test_HE1.calc_temp_dist(points= 10)
+        test_HE1.calc_temp_dist(points= 4)
         test_HE1_fig, test_HE1_ax = test_HE1.plot_temp_dist_df()
         test_HE1_ax.set_title('Test HE1')
-        
+        test_HE1.HTA_LMTD()
+        #print(test_HE1.A, test_HE1.LMTD)
+        #print(test_HE1.temp_dist_df)
         self.assertEqual(round(test_HE1.dT_min,2), 40.0)
+    
+    
+    def test_HeatExchanger2(self):
         
         """
         Test case 2 - heat transfer in counter flow without phase change eg. gas-to-gas, liquid-to-liquid, gas-to-liquid or liquid-to-gas.
@@ -51,12 +59,14 @@ class TestOOP_heat_exchanger(unittest.TestCase):
                                   hot_fluid = f'HEOS::CO2[{z_CO2}]&O2[{z_O2}]&N2[{z_N2}]&H2O[{z_H2O}]', cold_fluid = 'INCOMP::T66', 
                                   flow_arrangement = 'counter')
         
-        test_HE2.calc_temp_dist(points= 10)
+        test_HE2.calc_temp_dist(points= 4)
         test_HE2_fig, test_HE2_ax = test_HE2.plot_temp_dist_df()
         test_HE2_ax.set_title('Test HE2')
 
         self.assertEqual(round(test_HE2.dT_min,2), 40.0)
-        
+    
+    def test_HeatExchanger3(self):
+    
         """
         Test case 3 - heat transfer with phase change on one of the sides eg. evaporation
         """
@@ -71,6 +81,8 @@ class TestOOP_heat_exchanger(unittest.TestCase):
         test_HE3_ax.set_title('Test HE3')
         
         self.assertEqual(round(test_HE3.dT_min,2), 40.0)
+    
+    def test_HeatExchanger4(self):
         
         """
         Test case 4- heat transfer with phase change on one of the sides eg. condensation.
@@ -81,15 +93,50 @@ class TestOOP_heat_exchanger(unittest.TestCase):
                                   hot_fluid = 'Toluene', cold_fluid = 'INCOMP::MEG-40%', 
                                   flow_arrangement = 'counter')
         
-        test_HE4.calc_temp_dist(points= 4)
+        test_HE4.calc_temp_dist(points= 10)
         test_HE4_fig, test_HE4_ax = test_HE4.plot_temp_dist_df()
+        test_HE4.HTA_LMTD()
+        print(test_HE4.A_COL)
+        print(test_HE4.LMTD_COL)
         test_HE4_ax.set_title('Test HE4')
         
         self.assertEqual(round(test_HE4.dT_min,2), 10.0)
         
+    def test_HeatExchanger5(self):
         
         """
-        Test case 4 - heat transfer with phase change on both sides.
+        Test case 5 - heat transfer with phase change from user defined mixture (eg. flue gas, exhaust gas) to working fluid (eg. Toluene, MM)
+        """
+        
+        z_CO2 = 0.0670 		
+        z_O2  = 0.0610	
+        z_H2O = 0.1310
+        z_N2  = 0.7410
+        
+        test_HE5 = HeatExchanger(T_hot_in = 510, T_hot_out = 137.413036, T_cold_in = 57.413046, T_cold_out = 203.039782, 
+                                  m_hot = 0.65, m_cold = 0.469010512979527, p_hot_in = 101.325, p_cold_in = 724.363, 
+                                  hot_fluid = f'HEOS::CO2[{z_CO2}]&O2[{z_O2}]&N2[{z_N2}]&H2O[{z_H2O}]', cold_fluid = 'Toluene', 
+                                  flow_arrangement = 'counter')
+        
+        test_HE5.calc_temp_dist(points= 10)
+        test_HE5_fig, test_HE5_ax = test_HE5.plot_temp_dist_df()
+        test_HE5_ax.set_title('Test HE5')
+        test_HE5.temp_dist_df
+        test_HE5.temp_dist_df['Q_cold']
+        test_HE5.HTA_LMTD()
+        self.assertEqual(round(test_HE5.dT_min,2), 80.0)
+        
+        """
+        Test case 6 - heat transfer with phase on both side of heat exchanger e.g. Toluene coling down from heating up another Toluene stram, which is evaporating.
+        This is highly implausible, although it is one of the best test cases, due to demanding nature of such proces
+        """
+        
+        """
+        Test case 7 - heat transfer from flue gas to thermal oil (or other fluid with no phase change) with condensation of water in flue gas 
+        """
+        
+        """
+        Test case 8 - heat transfer from flue gas to thermal oil (or other fluid with no phase change)
         """
 
 if __name__=='__main__':

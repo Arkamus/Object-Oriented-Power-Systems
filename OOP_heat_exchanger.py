@@ -95,42 +95,113 @@ class HeatExchanger:
             
             self.T_hot_aprox = np.poly1d(np.polyfit(x = h_data, y = T_data , deg = 6))
             
-    def LMTD(self):
+    def log_mean_temp(self, T_hot_in, T_hot_out, T_cold_in, T_cold_out, flow_arrangement):
         
         """
-        Calculates Logarithmic mean temperature difference
+        Calculates logarithmic mean temperature difference method - source 1. 
+        If there is phase change in heat exchanger, then LMTD should be calculated fore each zone:
+            * preheating/ precooling
+            * evaporation/condensation
+            * superheating/subcoling
         
-        dTA - temperature difference between two streams (hot and cold) at one end of heat exchanger (A)
-        dTB - temperature difference between two streams (hot and cold) at other end of heat exchanger (B)
         
-        Source:
-           https://en.wikipedia.org/wiki/Logarithmic_mean_temperature_difference 
+        Sources:
+           1. https://en.wikipedia.org/wiki/Logarithmic_mean_temperature_difference 
         """
-        if self.flow_arrangement == 'parallel':
+        if flow_arrangement == 'parallel':
         
-            dTA = self.T_hot_in-self.T_cold_in
-            dTB = self.T_hot_out-self.T_cold_out
+            dTA = T_hot_in-T_cold_in
+            dTB = T_hot_out-T_cold_out
         
-        elif self.flow_arrangement == 'counter':
+        elif flow_arrangement == 'counter':
             
-            dTA = self.T_hot_in-self.T_cold_out
-            dTB = self.T_hot_out-self.T_cold_in
+            dTA = T_hot_in-T_cold_out
+            dTB = T_hot_out-T_cold_in
             
-        elif self.flow_arrangement == 'cross':
+        elif flow_arrangement == 'cross':
             
             raise Exception("Cross flow arrangement not yet implemented, can be only: parallel or counter")
         
-        self.LMTD = (dTA-dTB)/math.log(dTA/dTB)
+        LMTD = (dTA-dTB)/math.log(dTA/dTB)
         
-    def HTA_LMTD(self, alfa):
+        return LMTD
+    
+    def HTA_LMTD(self):
         
         """
-        Calculates heat transfer area using LMTD.
+        Calculation of heat transfer area using LMTD method
+        U - overall heat transfer coefficient, W/m^2*K
         
-        Inputs:
-            alafa - heat transfer coefficien
+        Sources:
+        1. https://www.politesi.polimi.it/retrieve/a81cb05a-c4e7-616b-e053-1605fe0a889a/Marco%20Astolfi%20-%20PhD-last.pdf
+        
         """
+        
+        'Checking if there is phase change in heat exchanger - if it is then heat exchanger will be calculated as three separated heat exchanger - for three zones of heat exchanger'
+        if self.hot_fluid_phase_change == True:
             
+            if 'HEOS' not in self.hot_fluid and 'INCOMP' in self.cold_fluid:
+                
+                'For phase change temp_dist_diff must be splited to three different table for each section heat exchanger.'
+                'Olny the first and last row are significant for preliminary design.'
+                
+                coller = self.temp_dist_df[(self.temp_dist_df.Q_hot >=1.0)].iloc[[0, -1]].reset_index(drop=True)
+                condenser = self.temp_dist_df[(self.temp_dist_df.Q_hot.between(0.0,1.0))].iloc[[0, -1]].reset_index(drop=True)
+                subcoller = self.temp_dist_df[(self.temp_dist_df.Q_hot <= min(condenser.Q_hot))].iloc[[0, -1]].reset_index(drop=True)
+                
+                'Calculation of LMTD for each section'
+                self.LMTD_COL   = self.log_mean_temp(T_hot_in=coller.T_hot[0], T_hot_out=coller.T_hot[1], T_cold_in =coller.T_cold[1], T_cold_out = coller.T_cold[0], flow_arrangement=self.flow_arrangement)
+                self.LMTD_COND  = self.log_mean_temp(T_hot_in=condenser.T_hot[0], T_hot_out=condenser.T_hot[1], T_cold_in =condenser.T_cold[1], T_cold_out = condenser.T_cold[0], flow_arrangement=self.flow_arrangement)
+                self.LMTD_SUB   = self.log_mean_temp(T_hot_in=subcoller.T_hot[0], T_hot_out=subcoller.T_hot[1], T_cold_in =subcoller.T_cold[1], T_cold_out = subcoller.T_cold[0], flow_arrangement=self.flow_arrangement)
+                
+                'Calcualtion of heat transfered in each section'
+                self.Q_COL = coller.Q[1]-coller.Q[0]
+                self.Q_COND = condenser.Q[1]-condenser.Q[0]
+                self.Q_SUB = subcoller.Q[1]-subcoller.Q[0]
+                
+                'Calculation of heat transfer area for each section and heat exhcanger as a whole.'
+                self.A_COL  = (self.Q_COL*1000)/(343.01*self.LMTD_COL)
+                self.A_COND = (self.Q_COND*1000)/(623.47*self.LMTD_COND)
+                self.A_SUB  = (self.Q_SUB*1000)/(623.47*self.LMTD_SUB)
+                self.A = self.A_COL+self.A_COND+self.A_SUB
+            
+        elif self.cold_fluid_phase_change == True:
+            
+            if 'HEOS' in self.hot_fluid and 'INCOMP' not in self.cold_fluid:
+                
+                
+                'For phase change temp_dist_diff must be splited to three different table for each section heat exchanger.'
+                'Olny the first and last row are significant for preliminary design.'
+                
+                table = self.temp_dist_df 
+                
+                superheater = self.temp_dist_df[(self.temp_dist_df.Q_cold >=1.0)].iloc[[0, -1]].reset_index(drop=True)
+                evaporator  = self.temp_dist_df[(self.temp_dist_df.Q_cold.between(0.0,1.0))].iloc[[0, -1]].reset_index(drop=True)
+                preheater   = self.temp_dist_df[(self.temp_dist_df.Q_cold <= min(evaporator.Q_cold))].iloc[[0, -1]].reset_index(drop=True)
+                
+                'Calculation of LMTD for each section'
+                self.LMTD_SUP   = self.log_mean_temp(T_hot_in=superheater.T_hot[0], T_hot_out=superheater.T_hot[1], T_cold_in =superheater.T_cold[1], T_cold_out = superheater.T_cold[0], flow_arrangement=self.flow_arrangement)
+                self.LMTD_EVAP  = self.log_mean_temp(T_hot_in=evaporator.T_hot[0], T_hot_out=evaporator.T_hot[1], T_cold_in =evaporator.T_cold[1], T_cold_out = evaporator.T_cold[0], flow_arrangement=self.flow_arrangement)
+                self.LMTD_PRE   = self.log_mean_temp(T_hot_in=preheater.T_hot[0], T_hot_out=preheater.T_hot[1], T_cold_in =preheater.T_cold[1], T_cold_out = preheater.T_cold[0], flow_arrangement=self.flow_arrangement)
+                
+                'Calcualtion of heat transfered in each section'
+                self.Q_SUP = superheater.Q[1]-superheater.Q[0]
+                self.Q_EVAP = evaporator.Q[1]-evaporator.Q[0]
+                self.Q_PRE = preheater.Q[1]-preheater.Q[0]
+                
+                'Calculation of heat transfer area for each section and heat exhcanger as a whole.'
+                self.A_SUP  = (self.Q_SUP*1000)/(343.01*self.LMTD_SUP)
+                self.A_EVAP = (self.Q_EVAP*1000)/(623.47*self.LMTD_EVAP)
+                self.A_PRE  = (self.Q_PRE*1000)/(623.47*self.LMTD_PRE)
+                self.A = self.A_SUP+self.A_EVAP+self.A_PRE
+                
+        else:
+            self.LMTD = self.log_mean_temp(self.T_hot_in, self.T_hot_out, self.T_cold_in, self.T_cold_out, self.flow_arrangement)
+            
+            if  'HEOS' or 'Air' in self.hot_fluid and 'INCOMP' in self.cold_fluid:
+                self.U = 465.40 # W/m^2*K
+                self.A = (self.Q_cold*1000)/(self.U*self.LMTD)
+        
     def calc_temp_dist(self, points = 4):
         
         """
@@ -139,6 +210,79 @@ class HeatExchanger:
         
         ponits - number of characteristic points on graph 
         """
+        
+        def check_phase(T,p, fluid, Quality = None):
+            
+            """
+            Wrapper function to check phase of fluid in simple and more complex cases e.g. incompressible fluids, phase change (evaporation, condensation), saturation
+            
+            T - temperature, C.deg
+            p - pressure, kPa(a)
+            fluid - fluid name
+            
+            INCOMP - incompressible fluid, usually liquid
+            HEOS - user defined fluid - mixture e.g. exhaust gas, air or other gaseous mixture, usually gas
+            """
+        
+            if 'INCOMP' in fluid:
+                
+                return 'liquid'
+            
+            elif 'HEOS' in fluid:
+            
+                return CP.PhaseSI('T|gas', T+273.15, 'P', p*1000, fluid)
+            
+            else:
+                
+                phase = CP.PhaseSI('T', T+273.15, 'P', p*1000, fluid)
+                
+                if 'Saturation pressure' in str(phase):
+                    
+                    phase = 'twophase'
+        
+                return phase
+        
+        def vapour_quality(h, p, fluid, T = None):
+            
+            """
+            Wrapper function to check vapour quality Q
+            
+            Q - vapour quality 0-1, 0 saturated liquid, 1 - dry vapour, -1 - subcoled liquid, 2 - superheated gas
+            h - enthalpy, kJ/kg*K
+            p - pressure, kPa(a)
+            fluid - fluid name
+            
+            INCOMP - incompressible fluid, usually liquid
+            HESO   - user defined fluid, usually gas
+            """
+        
+            if 'INCOMP' in fluid:
+                
+                return -1.0
+            
+            elif 'HEOS' in fluid:
+                
+                return 1
+            
+            else:
+                
+                Quality = CP.PropsSI('Q', 'Hmass', h*1000, 'P', p*1000, fluid)
+                
+                if Quality < 0:
+                    
+                    phase = CP.PhaseSI('T', T+273.15, 'P', p*1000, fluid)
+                    
+                    if phase == 'gas':
+                        
+                        Quality = 2.0
+                    
+                    elif phase == 'liquid':
+                    
+                        Quality = -1.0
+                        
+                return Quality
+                    
+        
         self.points = points
         
         p_hot_out = self.p_hot_in
@@ -147,7 +291,6 @@ class HeatExchanger:
         'Checking if hot fluid is a user defined mixture'
         if 'HEOS' in self.hot_fluid:
             T_param = 'T|gas'
-            #Dew_point_hot_fluid = CP.PropsSI('T', 'Q', 1, 'P', self.p_hot_in, self.hot_fluid)-273.15
         else:
             T_param = 'T'
         
@@ -170,57 +313,55 @@ class HeatExchanger:
         'Creating data frame for heat exchanger temperature distribution'
         self.temp_dist_df = pd.DataFrame(columns = ['Q', 'T_hot', 'T_cold', 'dT', 'h_hot', 'h_cold'])
         
-        'Phase change is not allowed for incompressible fluids. Checking if hot fluid is incompressible'
-        if 'INCOMP' in self.hot_fluid:
-            
-            phase_hot_in  = 'liquid'
-            phase_hot_out = 'liquid'
-            
-        else:
-         
-            'Checking if ther is a phase change of hot fluid'
-            phase_hot_in  = CP.PhaseSI(T_param, self.T_hot_in+273.15, 'P', self.p_hot_in*1000, self.hot_fluid)
-            phase_hot_out = CP.PhaseSI(T_param, self.T_hot_out+273.15, 'P', self.p_hot_in*1000, self.hot_fluid)
-            
-        'Phase change is not allowed for incompressible fluids. Checking if cold fluid is incompressible'
-        if 'INCOMP' in self.cold_fluid:
-            
-            phase_cold_in  = 'liquid'
-            phase_cold_out = 'liquid'
-            
-        else:
-            
-            'Checking if there is a phase change of cold fluid'
-            phase_cold_in  = CP.PhaseSI(T_param, self.T_cold_in+273.15, 'P', self.p_cold_in*1000, self.cold_fluid)
-            phase_cold_out = CP.PhaseSI(T_param, self.T_cold_out+273.15, 'P', self.p_cold_in*1000, self.cold_fluid)
+        'Checking phase of hot fluid'
+        phase_hot_in = check_phase(self.T_hot_in,self.p_hot_in, self.hot_fluid)
+        phase_hot_out = check_phase(self.T_hot_out,p_hot_out, self.hot_fluid)
+        
+        'Checking phase of hot fluid'
+        phase_cold_in = check_phase(self.T_cold_in,self.p_cold_in, self.cold_fluid)
+        phase_cold_out = check_phase(self.T_cold_out,p_cold_out, self.cold_fluid)
         
         'Calculating stauration points of cold fluid if it is changid phase in heat exchanger'
         if phase_cold_in != phase_cold_out:
             
+            self.cold_fluid_phase_change = True
+            
             h_cold_evap0 = CP.PropsSI('Hmass', 'Q', 0, 'P', self.p_cold_in*1000, self.cold_fluid)/1000
             h_cold_evap1 = CP.PropsSI('Hmass', 'Q', 1, 'P', self.p_cold_in*1000, self.cold_fluid)/1000
             
-            T_cold_evap = CP.PropsSI('T', 'Q', 1, 'P', self.p_cold_in*1000, self.cold_fluid)-273.15
+            self.T_cold_evap = CP.PropsSI('T', 'Q', 1, 'P', self.p_cold_in*1000, self.cold_fluid)-273.15
             
-            Q_cold_superheat = self.m_cold*(self.h_cold_out-h_cold_evap1)
-            Q_cold_evaporation =  self.m_cold*(self.h_cold_out-h_cold_evap0)
+            self.Q_cold_superheat = self.m_cold*(self.h_cold_out-h_cold_evap1)
+            self.Q_cold_evaporation =  self.m_cold*(h_cold_evap1-h_cold_evap0)
+            self.Q_cold_preheat = self.m_cold*(h_cold_evap0-self.h_cold_in)
         
-            self.Q_intervals = np.append(self.Q_intervals, [Q_cold_superheat, Q_cold_evaporation])
+            self.Q_intervals = np.append(self.Q_intervals, [self.Q_cold_superheat, self.Q_cold_superheat+self.Q_cold_evaporation])
             self.Q_intervals = np.sort(self.Q_intervals)
+        
+        else:
+            
+            self.cold_fluid_phase_change = False
         
         'Calculating stauration points of hot fluid if it is changid phase in heat exchanger'
         if phase_hot_in != phase_hot_out:
             
+            self.hot_fluid_phase_change = True
+            
             h_hot_evap0 = CP.PropsSI('Hmass', 'Q', 0, 'P', self.p_hot_in*1000, self.hot_fluid)/1000
             h_hot_evap1 = CP.PropsSI('Hmass', 'Q', 1, 'P', self.p_hot_in*1000, self.hot_fluid)/1000
             
-            T_hot_evap = CP.PropsSI('T', 'Q', 1, 'P', self.p_hot_in*1000, self.hot_fluid)-273.15
+            self.T_hot_evap = CP.PropsSI('T', 'Q', 1, 'P', self.p_hot_in*1000, self.hot_fluid)-273.15
             
-            Q_hot_superheat = self.m_hot*(self.h_hot_in-h_hot_evap1)
-            Q_hot_evaporation =  self.m_hot*(self.h_hot_in-h_hot_evap0)
+            self.Q_hot_cool = self.m_hot*(self.h_hot_in-h_hot_evap1)
+            self.Q_hot_condesation =  self.m_hot*(h_hot_evap1-h_hot_evap0)
+            self.Q_hot_subcooling = self.m_hot*(h_hot_evap0-self.h_hot_out)
         
-            self.Q_intervals = np.append(self.Q_intervals, [Q_hot_superheat, Q_hot_evaporation])
+            self.Q_intervals = np.append(self.Q_intervals, [self.Q_hot_cool, self.Q_hot_cool+self.Q_hot_condesation])
             self.Q_intervals = np.sort(self.Q_intervals)
+        
+        else: 
+            
+            self.hot_fluid_phase_change = False
         
         'Calculating temperatures for each heat stream in frame'
         self.temp_dist_df['Q'] = self.Q_intervals
@@ -245,8 +386,20 @@ class HeatExchanger:
             self.temp_dist_df.loc[counter, 'T_hot'] = T_hot
             self.temp_dist_df.loc[counter, 'T_cold'] = T_cold
             
+            self.temp_dist_df.loc[counter, 'p_hot'] = self.p_hot_in
+            self.temp_dist_df.loc[counter, 'p_cold'] = self.p_cold_in
+            
             self.temp_dist_df.loc[counter, 'h_hot'] = h_hot
             self.temp_dist_df.loc[counter, 'h_cold'] = h_cold
+            
+            self.temp_dist_df.loc[counter, 'hot_fluid'] = self.hot_fluid
+            self.temp_dist_df.loc[counter, 'cold_fluid'] = self.cold_fluid
+            
+            self.temp_dist_df.loc[counter, 'Q_hot'] = vapour_quality(h_hot,  self.p_hot_in, self.hot_fluid, T_hot)#CP.PropsSI('Q', 'Hmass', h_hot*1000, 'P', self.p_hot_in*1000, self.hot_fluid)
+            self.temp_dist_df.loc[counter, 'Q_cold'] = vapour_quality(h_cold,  self.p_cold_in, self.cold_fluid, T_cold) #CP.PropsSI('Q', 'Hmass', h_cold*1000, 'P', self.p_cold_in*1000, self.cold_fluid)
+            
+            self.temp_dist_df.loc[counter, 'phase_hot_fluid'] =  check_phase(T_hot,self.p_hot_in, self.hot_fluid)
+            self.temp_dist_df.loc[counter, 'phase_cold_fluid'] = check_phase(T_cold,self.p_cold_in, self.cold_fluid)
             
             counter += 1
         
@@ -265,6 +418,32 @@ class HeatExchanger:
         
         self.dT_min = min(self.temp_dist_df['dT'].values)
         
+        def HTA_LMTD(self):
+            
+            """
+            Calculation of heat transfer area (A) using LMTD method.
+            
+            U - overal heat transfer coefficient, W/m^2*K
+            A - heat transfer area, m^2
+            
+            T_hot_evap - temperature of evaportation (phase change) of hotter fluid, deg.C or K
+            T_cold_ecvap - temperature of evaporation (phase change) of colder fluid, deg.C or K
+            
+            Q_cool - heat flux during cooling of hot fluid, kW
+            Q_condensation - heat flux during condesnation of hot fluid, kW
+            Q_subcooling - heat flux during subcooling of hot fluid, kW
+            
+            Q_preheat - heat flux during preheat of cold fluid, kW
+            Q_evaporation - heat flux during evaporation of cold fluid, kW
+            Q_superheat - heat flux during superheating of cold fluid, kW
+            
+            Q_hot - heat flux transfered in heat exchanger from hot fluid to cold fluid (Q_hot=Q_cold), kW
+            """
+            
+            if self.cold_fluid_phase_change == True or self.hot_fluid_phase_change == True:
+                pass
+            else:
+                pass
     
     def plot_temp_dist_df(self):
         
