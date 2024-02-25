@@ -23,7 +23,6 @@ class ORC:
         p_min           - Minimal allowerd presurre in ORC system, kPa(a)
         p_fluid_max     - Maximal pressure of fluid with know properties, kPa(a)
         
-
         T_fluid_max     - Maximal temperature of fluid with known properties, C.deg
         
         dT_sup          - Superheating of working fluid in evaporator, C.deg
@@ -38,8 +37,6 @@ class ORC:
         """
         
         'Verifying working fluid properties accorcindg to input data - p_max, p_min, p_crit, T_crit'
-        
-
         
         self.p_max = p_max
         self.p_min = p_min
